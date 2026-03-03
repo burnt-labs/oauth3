@@ -1,0 +1,33 @@
+services:
+  app:
+    image: ${DOCKER_IMAGE}
+    pull_policy: always
+    restart: unless-stopped
+    volumes:
+      # Mount dstack socket for TEE operations
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - appdata:/app/data
+    environment:
+      DATABASE_URL: sqlite:///app/data/oauth3.db
+      APP_BIND_ADDR: ${APP_BIND_ADDR:-0.0.0.0:8080}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+      COOKIE_KEY_BASE64: ${COOKIE_KEY_BASE64}
+      RUST_LOG: ${RUST_LOG:-info,oauth3=info}
+      DSTACK_SOCKET: /var/run/dstack.sock
+      # Google OAuth provider
+      PROVIDER_GOOGLE_TYPE: ${PROVIDER_GOOGLE_TYPE}
+      PROVIDER_GOOGLE_MODE: ${PROVIDER_GOOGLE_MODE}
+      PROVIDER_GOOGLE_CLIENT_ID: ${PROVIDER_GOOGLE_CLIENT_ID}
+      PROVIDER_GOOGLE_CLIENT_SECRET: ${PROVIDER_GOOGLE_CLIENT_SECRET}
+      PROVIDER_GOOGLE_ISSUER: ${PROVIDER_GOOGLE_ISSUER}
+      PROVIDER_GOOGLE_SCOPES: ${PROVIDER_GOOGLE_SCOPES}
+      PROVIDER_GOOGLE_API_BASE_URL: ${PROVIDER_GOOGLE_API_BASE_URL}
+      # Registry credentials (consumed by Phala pre-launch script for docker login)
+      DSTACK_DOCKER_REGISTRY: ${DSTACK_DOCKER_REGISTRY:-}
+      DSTACK_DOCKER_USERNAME: ${DSTACK_DOCKER_USERNAME:-}
+      DSTACK_DOCKER_PASSWORD: ${DSTACK_DOCKER_PASSWORD:-}
+    ports:
+      - "8080:8080"
+
+volumes:
+  appdata:

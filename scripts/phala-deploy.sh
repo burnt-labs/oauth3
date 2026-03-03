@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Resolve repo root (scripts live in scripts/)
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Parse arguments
+ENV_FILE="${1:-$REPO_ROOT/.env.phala}"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Error: Environment file not found: $ENV_FILE"
+  echo "Usage: $0 [env-file]"
+  echo ""
+  echo "Examples:"
+  echo "  $0                              # Deploy using .env.phala"
+  echo "  $0 /path/to/.env.phala          # Deploy using custom env file"
+  exit 1
+fi
+
+echo "Reading environment from: $ENV_FILE"
+
+# Parse env file and build list of variables defined in it
+declare -A ENV_VARS
+while IFS= read -r line; do
+  # Skip comments and empty lines
+  [[ "$line" =~ ^[[:space:]]*# ]] && continue
+  [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+
+  # Remove 'export ' prefix if present
+  line="${line#export }"
+
+  # Extract variable name
+  if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+    var_name="${BASH_REMATCH[1]}"
+    ENV_VARS[$var_name]=1
+  fi
+done < "$ENV_FILE"
+
+# Now source the file to get actual values
+set -a
+source "$ENV_FILE"
+set +a
+
+# Check critical variables (no sensible defaults)
+REQUIRED_VARS=(
+  "DOCKER_IMAGE"
+  "COOKIE_KEY_BASE64"
+)
+
+for var in "${REQUIRED_VARS[@]}"; do
+  if [[ -z "${!var:-}" ]]; then
+    echo "Error: Required variable $var is not set in $ENV_FILE"
+    exit 1
+  fi
+done
+
+# Warn if APP_PUBLIC_URL is not set (needed for OAuth callbacks)
+if [[ -z "${APP_PUBLIC_URL:-}" ]]; then
+  echo "WARNING: APP_PUBLIC_URL is not set"
+  echo "   OAuth providers will not work until you:"
+  echo "   1. Get the public URL from Phala after deployment"
+  echo "   2. Update APP_PUBLIC_URL environment variable"
+  echo "   3. Configure OAuth callback URLs with providers"
+  echo ""
+  # Set a placeholder
+  APP_PUBLIC_URL="http://placeholder-update-after-deployment"
+  ENV_VARS[APP_PUBLIC_URL]=1
+fi
+
+# Optional variables with defaults
+TEEPOD_ID="${TEEPOD_ID:-}"
+CVM_NAME="${CVM_NAME:-oauth3-$(date +%Y%m%d-%H%M%S)}"
+INSTANCE_TYPE="${INSTANCE_TYPE:-}"
+DISK_SIZE="${DISK_SIZE:-60G}"
+
+# Apply defaults for docker-compose variables (Phala doesn't support ${VAR:-default} syntax)
+: "${APP_BIND_ADDR:=0.0.0.0:8080}"
+: "${RUST_LOG:=info,oauth3=info}"
+
+# Mark defaults as defined
+ENV_VARS[APP_BIND_ADDR]=1
+ENV_VARS[RUST_LOG]=1
+ENV_VARS[DOCKER_IMAGE]=1
+
+# Create temp directory for generated env file
+TEMP_DIR=$(mktemp -d)
+TEMP_ENV_FILE="$TEMP_DIR/phala-deploy.env"
+
+# Cleanup on exit
+trap "rm -rf '$TEMP_DIR'" EXIT
+
+# ── Generate env file ─────────────────────────────────────────────────
+echo "# Generated environment file for Phala deployment" > "$TEMP_ENV_FILE"
+echo "# Source: $ENV_FILE" >> "$TEMP_ENV_FILE"
+echo "# Generated: $(date)" >> "$TEMP_ENV_FILE"
+echo "" >> "$TEMP_ENV_FILE"
+
+for var in "${!ENV_VARS[@]}"; do
+  value="${!var}"
+  # Strip surrounding quotes if present
+  if [[ "$value" =~ ^\"(.*)\"$ ]] || [[ "$value" =~ ^\'(.*)\'$ ]]; then
+    value="${BASH_REMATCH[1]}"
+  fi
+  echo "${var}=${value}" >> "$TEMP_ENV_FILE"
+done
+
+# Show generated env file
+echo ""
+echo "Generated environment file at: $TEMP_ENV_FILE"
+echo "────────────────────────────────────────"
+cat "$TEMP_ENV_FILE"
+echo "────────────────────────────────────────"
+echo ""
+
+# ── Build deploy command ──────────────────────────────────────────────
+CMD=(
+  phala deploy
+  --name "$CVM_NAME"
+  --compose "$REPO_ROOT/docker-compose.phala.yml"
+  --disk-size "$DISK_SIZE"
+  -e "$TEMP_ENV_FILE"
+)
+
+# Add instance type if specified
+if [[ -n "$INSTANCE_TYPE" ]]; then
+  CMD+=(--instance-type "$INSTANCE_TYPE")
+fi
+
+# Add node if specified
+if [[ -n "$TEEPOD_ID" ]]; then
+  CMD+=(--node-id "$TEEPOD_ID")
+fi
+
+# Print the command
+echo "Deployment command:"
+echo "${CMD[@]}"
+echo ""
+
+# Always creates a fresh CVM — no in-place updates.
+# Old CVM must be manually removed after verifying the new one works.
+echo "This will create a NEW CVM: $CVM_NAME"
+echo "Remember to remove the old CVM after verifying the new deployment."
+echo ""
+
+# Confirm before running
+read -p "Deploy new CVM to Phala? (y/N) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+  echo "Deployment cancelled"
+  echo "Generated env file preserved at: $TEMP_ENV_FILE"
+  trap - EXIT  # Disable cleanup
+  exit 0
+fi
+
+# ── Deploy ────────────────────────────────────────────────────────────
+"${CMD[@]}"

@@ -1,0 +1,19 @@
+target/
+.git/
+.env
+.env.*
+!.env.example
+Dockerfile
+docker-compose*
+.dockerignore
+
+# Development files
+dex-config.yaml
+tests/
+scripts/
+
+# Nix build artifacts
+result
+result-*
+.direnv/
+.devenv/

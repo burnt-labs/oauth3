@@ -1,0 +1,40 @@
+services:
+  simulator:
+    image: phalanetwork/tappd-simulator:latest
+    restart: unless-stopped
+    volumes:
+      - dstack-socket:/var/run
+    ports:
+      - "8090:8090"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      - dstack-socket:/var/run
+      - appdata:/app/data
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:///app/data/oauth3.db
+      RUST_LOG: info,oauth3=debug
+    extra_hosts:
+      - "localhost:host-gateway"
+    ports:
+      - "8080:8080"
+
+  dex:
+    image: dexidp/dex:v2.41.1
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dex-config.yaml:/etc/dex/config.docker.yaml
+      - dexdata:/var/dex
+    command: dex serve /etc/dex/config.docker.yaml
+
+volumes:
+  appdata:
+  dexdata:
+  dstack-socket:
