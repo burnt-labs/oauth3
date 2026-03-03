@@ -1,0 +1,42 @@
+# Phala TEE deployment compose file.
+#
+# ATTESTATION NOTE: This file's content is attested by the TEE. Values
+# hardcoded here are verifiable by auditors. Environment variables are
+# set by the host operator and are NOT covered by attestation — only use
+# them for secrets that cannot be baked into the image.
+#
+# To update provider endpoints or the Docker image, edit this file and
+# redeploy. This creates a new attestation covering the changed values.
+
+services:
+  app:
+    image: ghcr.io/burnt-labs/oauth3:latest
+    pull_policy: always
+    restart: unless-stopped
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - appdata:/app/data
+    environment:
+      # ── Hardcoded (attested) config ──────────────────────────────────
+      DATABASE_URL: sqlite:///app/data/oauth3.db
+      APP_BIND_ADDR: 0.0.0.0:8080
+      RUST_LOG: info,oauth3=info
+      DSTACK_SOCKET: /var/run/dstack.sock
+
+      # Google OIDC provider (endpoints are attested, secrets are not)
+      PROVIDER_GOOGLE_TYPE: oidc
+      PROVIDER_GOOGLE_MODE: live
+      PROVIDER_GOOGLE_ISSUER: https://accounts.google.com
+      PROVIDER_GOOGLE_SCOPES: openid https://www.googleapis.com/auth/gmail.metadata
+      PROVIDER_GOOGLE_API_BASE_URL: https://www.googleapis.com
+
+      # ── Host-set secrets (NOT attested) ──────────────────────────────
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+      COOKIE_KEY_BASE64: ${COOKIE_KEY_BASE64}
+      PROVIDER_GOOGLE_CLIENT_ID: ${PROVIDER_GOOGLE_CLIENT_ID}
+      PROVIDER_GOOGLE_CLIENT_SECRET: ${PROVIDER_GOOGLE_CLIENT_SECRET}
+    ports:
+      - "8080:8080"
+
+volumes:
+  appdata:
