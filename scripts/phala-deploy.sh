@@ -68,11 +68,17 @@ if [[ -z "${APP_PUBLIC_URL:-}" ]]; then
   ENV_VARS[APP_PUBLIC_URL]=1
 fi
 
-# Optional variables with defaults
+# Deploy settings (read then remove from env vars passed to container)
 TEEPOD_ID="${TEEPOD_ID:-}"
 CVM_NAME="${CVM_NAME:-oauth3-$(date +%Y%m%d-%H%M%S)}"
 INSTANCE_TYPE="${INSTANCE_TYPE:-}"
 DISK_SIZE="${DISK_SIZE:-60G}"
+
+# These are deploy-script settings, not container env vars
+unset ENV_VARS[TEEPOD_ID] 2>/dev/null || true
+unset ENV_VARS[CVM_NAME] 2>/dev/null || true
+unset ENV_VARS[INSTANCE_TYPE] 2>/dev/null || true
+unset ENV_VARS[DISK_SIZE] 2>/dev/null || true
 
 # Create temp directory for generated env file
 TEMP_DIR=$(mktemp -d)

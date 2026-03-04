@@ -10,7 +10,7 @@
 
 services:
   app:
-    image: ghcr.io/burnt-labs/oauth3:latest
+    image: ghcr.io/burnt-labs/oauth3@sha256:e2a123a9af578ffb3b76fcb5f19b4272add0caf15ef03829868a488e30cd1d75
     pull_policy: always
     restart: unless-stopped
     volumes:
@@ -22,6 +22,7 @@ services:
       APP_BIND_ADDR: 0.0.0.0:8080
       RUST_LOG: info,oauth3=info
       DSTACK_SOCKET: /var/run/dstack.sock
+      APP_FORCE_SECURE: "true"
 
       # Google OIDC provider (endpoints are attested, secrets are not)
       PROVIDER_GOOGLE_TYPE: oidc
@@ -35,8 +36,23 @@ services:
       COOKIE_KEY_BASE64: ${COOKIE_KEY_BASE64}
       PROVIDER_GOOGLE_CLIENT_ID: ${PROVIDER_GOOGLE_CLIENT_ID}
       PROVIDER_GOOGLE_CLIENT_SECRET: ${PROVIDER_GOOGLE_CLIENT_SECRET}
+
+  dstack-ingress:
+    image: dstacktee/dstack-ingress:20250924@sha256:40429d78060ef3066b5f93676bf3ba7c2e9ac47d4648440febfdda558aed4b32
     ports:
-      - "8080:8080"
+      - "443:443"
+    environment:
+      DOMAIN: oauth3.burnt.com
+      TARGET_ENDPOINT: http://app:8080
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      GATEWAY_DOMAIN: _.${DSTACK_GATEWAY_DOMAIN}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL}
+      SET_CAA: "true"
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - cert-data:/etc/letsencrypt
+    restart: unless-stopped
 
 volumes:
   appdata:
+  cert-data:

@@ -59,8 +59,14 @@ fn get_tmp_cookie_name(provider: &str) -> String {
 fn redirect_after_login(cookies: &Cookies, config: &crate::config::AppConfig, user_id: &str, default_path: &str) -> Redirect {
     if let Some(path) = session::take_login_return_to(cookies) {
         if is_trusted_redirect(&path, &config.server.public_url) {
-            // For trusted return_to URLs, append a signed session token
-            // so the calling app can authenticate with OAuth3 via Bearer token.
+            // Same-origin or relative redirects don't need a token — the
+            // session cookie (`sid`) already provides authentication when
+            // the request stays on the same domain (e.g. reverse-proxy setup).
+            if is_same_origin_or_relative(&path, &config.server.public_url) {
+                return Redirect::temporary(&path);
+            }
+            // Cross-origin trusted redirect — attach a signed session token
+            // so the calling app can authenticate without our cookie.
             if let Some(token) = session::create_session_token(config, user_id) {
                 let separator = if path.contains('?') { "&" } else { "?" };
                 let url = format!("{}{}token={}", path, separator, urlencoding::encode(&token));
@@ -75,6 +81,19 @@ fn redirect_after_login(cookies: &Cookies, config: &crate::config::AppConfig, us
         }
     }
     Redirect::temporary(default_path)
+}
+
+/// Returns true when the URL is a relative path or shares the same origin
+/// as `public_url`. In these cases the session cookie round-trips naturally
+/// so there is no need to attach a token to the URL.
+fn is_same_origin_or_relative(url: &str, public_url: &str) -> bool {
+    if url.starts_with('/') && !url.starts_with("//") {
+        return true;
+    }
+    if let (Ok(target), Ok(base)) = (url::Url::parse(url), url::Url::parse(public_url)) {
+        return target.origin() == base.origin();
+    }
+    false
 }
 
 /// Check if a redirect URL is trusted for token attachment.

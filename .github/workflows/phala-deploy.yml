@@ -1,0 +1,62 @@
+name: Deploy to Phala Cloud
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_type:
+        description: 'CVM instance type'
+        required: true
+        default: 'tdx.small'
+        type: choice
+        options:
+          - tdx.small
+          - tdx.medium
+          - tdx.large
+      disk_size:
+        description: 'Disk size'
+        required: true
+        default: '60G'
+      cvm_name:
+        description: 'CVM name (leave empty for auto-generated)'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Phala CLI
+        run: npm install -g phala
+
+      - name: Authenticate with Phala Cloud
+        run: phala auth login --api-key "${{ secrets.PHALA_API_KEY }}"
+
+      - name: Deploy CVM
+        run: |
+          CVM_NAME="${{ inputs.cvm_name }}"
+          if [ -z "$CVM_NAME" ]; then
+            CVM_NAME="oauth3-$(date +%Y%m%d-%H%M%S)"
+          fi
+
+          # Process substitution passes secrets via in-memory file descriptor
+          # — nothing is written to disk.
+          phala deploy \
+            --name "$CVM_NAME" \
+            --compose docker-compose.phala.yml \
+            --disk-size "${{ inputs.disk_size }}" \
+            --instance-type "${{ inputs.instance_type }}" \
+            -e <(cat <<EOF
+          COOKIE_KEY_BASE64=${{ secrets.CVM_COOKIE_KEY_BASE64 }}
+          PROVIDER_GOOGLE_CLIENT_ID=${{ secrets.CVM_GOOGLE_CLIENT_ID }}
+          PROVIDER_GOOGLE_CLIENT_SECRET=${{ secrets.CVM_GOOGLE_CLIENT_SECRET }}
+          APP_PUBLIC_URL=${{ secrets.CVM_APP_PUBLIC_URL }}
+          CLOUDFLARE_API_TOKEN=${{ secrets.CVM_CLOUDFLARE_API_TOKEN }}
+          CERTBOT_EMAIL=${{ secrets.CVM_CERTBOT_EMAIL }}
+          EOF
+          )
+        shell: bash
