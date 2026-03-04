@@ -18,7 +18,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -68,6 +68,7 @@ jobs:
 
       - name: Tag and push image
         if: github.event_name != 'pull_request'
+        id: push
         run: |
           # The Nix build creates oauth3:nix
           SOURCE_IMAGE="oauth3:nix"
@@ -78,3 +79,37 @@ jobs:
             docker tag "$SOURCE_IMAGE" "$tag"
             docker push "$tag"
           done
+
+          # Pull back the latest tag to get the registry digest
+          FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          docker pull "$FULL_IMAGE"
+          REPO_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$FULL_IMAGE")
+          DIGEST="${REPO_DIGEST#*@}"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Image digest: $DIGEST"
+
+      - name: Update compose file with new image digest
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          DIGEST="${{ steps.push.outputs.digest }}"
+          if [ -z "$DIGEST" ]; then
+            echo "ERROR: No digest found"
+            exit 1
+          fi
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          sed -i -E "s|${IMAGE}@sha256:[a-f0-9]+|${IMAGE}@${DIGEST}|" docker-compose.phala.yml
+          echo "Updated docker-compose.phala.yml:"
+          grep "image:" docker-compose.phala.yml
+
+      - name: Commit updated compose file
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docker-compose.phala.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit (digest unchanged)"
+          else
+            git commit -m "chore: update Docker image digest [skip ci]"
+            git push
+          fi
