@@ -1,24 +1,27 @@
-name: Build and Push Docker Image
+name: Docker Build & Promote
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - 'v*'
   pull_request:
-    branches:
-      - main
+    branches: [main]
+    paths-ignore: ['docker-compose.phala.yml']
+  push:
+    branches: [main]
+    paths-ignore: ['docker-compose.phala.yml']
+    tags: ['v*']
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── Build on PRs ──────────────────────────────────────────────────────
+  # Builds the image via Nix and pushes with a PR-specific tag so it can
+  # be promoted later without rebuilding.
   build:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
 
     steps:
@@ -40,76 +43,125 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build Docker image with Nix
         run: |
           nix build .#dockerImage
           docker load < result
 
-      - name: Tag and push image
-        if: github.event_name != 'pull_request'
-        id: push
+      - name: Push image with PR tag
         run: |
-          # The Nix build creates oauth3:nix
-          SOURCE_IMAGE="oauth3:nix"
+          SOURCE="oauth3:nix"
+          # Tag with the PR head SHA so we can find it after merge
+          SHA_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.event.pull_request.head.sha }}"
+          PR_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pr-${{ github.event.pull_request.number }}"
 
-          # Tag and push with all metadata tags
-          echo "${{ steps.meta.outputs.tags }}" | while read -r tag; do
-            echo "Tagging and pushing: $tag"
-            docker tag "$SOURCE_IMAGE" "$tag"
-            docker push "$tag"
-          done
+          docker tag "$SOURCE" "$SHA_TAG"
+          docker tag "$SOURCE" "$PR_TAG"
+          docker push "$SHA_TAG"
+          docker push "$PR_TAG"
 
-          # Pull back the latest tag to get the registry digest
-          FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          docker pull "$FULL_IMAGE"
-          REPO_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$FULL_IMAGE")
-          DIGEST="${REPO_DIGEST#*@}"
+          echo "Pushed: $SHA_TAG"
+          echo "Pushed: $PR_TAG"
+
+  # ── Promote on merge to main ──────────────────────────────────────────
+  # Re-tags the image that was already built during the PR — no Nix
+  # rebuild needed. Then opens a PR to pin the new digest.
+  promote:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Promote image to latest
+        id: promote
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          # The merge commit's parents include the PR head SHA.
+          # Try to find the image tagged with that SHA.
+          PR_SHA=$(git log -1 --format='%P' | awk '{print $2}')
+
+          # Fall back to first parent if it's a squash merge (single parent)
+          if [ -z "$PR_SHA" ]; then
+            PR_SHA="${{ github.sha }}"
+          fi
+
+          SHA_TAG="sha-${PR_SHA}"
+          echo "Looking for image: ${IMAGE}:${SHA_TAG}"
+
+          # Check if the PR image exists; if not, fall back to building
+          if ! crane digest "${IMAGE}:${SHA_TAG}" 2>/dev/null; then
+            echo "PR image not found at ${SHA_TAG}, trying short SHA..."
+            SHA_TAG="sha-$(echo $PR_SHA | cut -c1-7)"
+            if ! crane digest "${IMAGE}:${SHA_TAG}" 2>/dev/null; then
+              echo "::warning::No PR image found. Run the build workflow manually."
+              exit 1
+            fi
+          fi
+
+          # Copy the PR image to main/latest tags (no rebuild!)
+          crane copy "${IMAGE}:${SHA_TAG}" "${IMAGE}:main"
+          crane copy "${IMAGE}:${SHA_TAG}" "${IMAGE}:latest"
+          crane copy "${IMAGE}:${SHA_TAG}" "${IMAGE}:main-${{ github.sha }}"
+
+          # Get the digest
+          DIGEST=$(crane digest "${IMAGE}:latest")
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
-          echo "Image digest: $DIGEST"
+          echo "Promoted ${IMAGE}:${SHA_TAG} → main/latest"
+          echo "Digest: $DIGEST"
 
-      - name: Update compose file with new image digest
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - name: Create PR to update image digest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DIGEST="${{ steps.push.outputs.digest }}"
+          DIGEST="${{ steps.promote.outputs.digest }}"
           if [ -z "$DIGEST" ]; then
             echo "ERROR: No digest found"
             exit 1
           fi
+
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           sed -i -E "s|${IMAGE}@sha256:[a-f0-9]+|${IMAGE}@${DIGEST}|" docker-compose.phala.yml
-          echo "Updated docker-compose.phala.yml:"
-          grep "image:" docker-compose.phala.yml
 
-      - name: Commit updated compose file
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docker-compose.phala.yml
-          if git diff --cached --quiet; then
-            echo "No changes to commit (digest unchanged)"
-          else
-            git commit -m "chore: update Docker image digest [skip ci]"
-            git push
+          if git diff --quiet docker-compose.phala.yml; then
+            echo "No changes (digest unchanged)"
+            exit 0
           fi
+
+          BRANCH="chore/update-image-digest-$(echo $DIGEST | cut -c8-19)"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add docker-compose.phala.yml
+          git commit -m "chore: update Docker image digest to ${DIGEST}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: update Docker image digest" \
+            --body "Auto-generated by CI. Updates \`docker-compose.phala.yml\` to reference the latest image digest: \`${DIGEST}\`" \
+            --base main \
+            --head "$BRANCH"
+
+          echo "PR created for digest update"
