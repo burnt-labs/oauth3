@@ -59,7 +59,7 @@ dstack-verifier = { path = "dstack-verifier" }
 # Test-only; avoid compiling in production images
 serial_test = "3"
 wiremock = "0.6"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 url = "2"
 rsa = { version = "0.9" }
 pkcs8 = { version = "0.10", features = ["pem"] }
