@@ -37,7 +37,7 @@ jobs:
         run: |
           CVM_NAME="${{ inputs.cvm_name }}"
           if [ -z "$CVM_NAME" ]; then
-            CVM_NAME="oauth3-$(date +%Y%m%d-%H%M%S)"
+            CVM_NAME="oauth3-redacted"
           fi
 
           # Process substitution passes secrets via in-memory file descriptor
