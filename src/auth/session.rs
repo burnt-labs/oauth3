@@ -49,22 +49,22 @@ pub fn clear_session(cookies: &Cookies, key: &tower_cookies::Key) {
     cookies.private(key).remove(base);
 }
 
-pub fn set_login_return_to(cookies: &Cookies, path: &str) {
+pub fn set_login_return_to(cookies: &Cookies, key: &tower_cookies::Key, path: &str) {
     let mut cookie = Cookie::new(RETURN_TO_COOKIE, path.to_string());
     cookie.set_path("/");
     cookie.set_http_only(true);
     cookie.set_same_site(tower_cookies::cookie::SameSite::Lax);
     cookie.set_secure(is_https());
     cookie.set_max_age(Duration::minutes(10));
-    cookies.add(cookie);
+    cookies.private(key).add(cookie);
 }
 
-pub fn take_login_return_to(cookies: &Cookies) -> Option<String> {
-    let value = cookies.get(RETURN_TO_COOKIE).map(|c| c.value().to_string());
+pub fn take_login_return_to(cookies: &Cookies, key: &tower_cookies::Key) -> Option<String> {
+    let value = cookies.private(key).get(RETURN_TO_COOKIE).map(|c| c.value().to_string());
     if value.is_some() {
         let mut cookie = Cookie::new(RETURN_TO_COOKIE, "");
         cookie.set_path("/");
-        cookies.remove(cookie);
+        cookies.private(key).remove(cookie);
     }
     value
 }
@@ -72,26 +72,6 @@ pub fn take_login_return_to(cookies: &Cookies) -> Option<String> {
 pub(crate) fn is_https() -> bool {
     // Use environment hint; default to false for local dev
     matches!(std::env::var("APP_FORCE_SECURE").as_deref(), Ok("1") | Ok("true") | Ok("yes"))
-}
-
-/// Create a short-lived HMAC-signed session token for cross-domain auth.
-/// Format: base64url(user_id:expiry_unix).hex(HMAC-SHA256(key, payload))
-pub fn create_session_token(config: &crate::config::AppConfig, user_id: &str) -> Option<String> {
-    use base64::Engine;
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
-    type HmacSha256 = Hmac<Sha256>;
-
-    let key_bytes = crate::config::decode_cookie_key(&config.server.cookie_key_base64).ok()?;
-    let exp = (time::OffsetDateTime::now_utc() + Duration::minutes(10)).unix_timestamp();
-    let payload = format!("{}:{}", user_id, exp);
-    let payload_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.as_bytes());
-
-    let mut mac = HmacSha256::new_from_slice(&key_bytes).ok()?;
-    mac.update(payload_b64.as_bytes());
-    let mac_hex = hex::encode(mac.finalize().into_bytes());
-
-    Some(format!("{}.{}", payload_b64, mac_hex))
 }
 
 /// Verify an HMAC-signed session token and return the user_id if valid.
