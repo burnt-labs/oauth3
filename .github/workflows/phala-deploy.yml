@@ -33,10 +33,9 @@ jobs:
       - name: Install Phala CLI
         run: npm install -g phala
 
-      - name: Authenticate with Phala Cloud
-        run: phala auth login --api-key "${{ secrets.PHALA_API_KEY }}"
-
       - name: Deploy CVM
+        env:
+          PHALA_CLOUD_API_KEY: ${{ secrets.PHALA_API_KEY }}
         run: |
           CVM_NAME="${{ inputs.cvm_name }}"
           if [ -z "$CVM_NAME" ]; then
