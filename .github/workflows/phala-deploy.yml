@@ -33,9 +33,6 @@ jobs:
       - name: Install Phala CLI
         run: npm install -g phala
 
-      - name: Authenticate with Phala Cloud
-        run: phala login "${{ secrets.PHALA_API_KEY }}"
-
       - name: Deploy CVM
         run: |
           CVM_NAME="${{ inputs.cvm_name }}"
@@ -46,6 +43,7 @@ jobs:
           # Process substitution passes secrets via in-memory file descriptor
           # — nothing is written to disk.
           phala deploy \
+            --api-token "${{ secrets.PHALA_API_KEY }}" \
             --name "$CVM_NAME" \
             --compose docker-compose.phala.yml \
             --disk-size "${{ inputs.disk_size }}" \
