@@ -91,7 +91,7 @@ pub async fn authorize_get(
             .path_and_query()
             .map(|pq| pq.as_str().to_string())
             .unwrap_or_else(|| "/oauth/authorize".to_string());
-        session::set_login_return_to(&cookies, &return_to);
+        session::set_login_return_to(&cookies, &state.cookie_key, &return_to);
         return Redirect::temporary("/login").into_response();
     };
 
@@ -133,7 +133,7 @@ pub async fn authorize_post(
     Form(form): Form<AuthorizeForm>,
 ) -> impl IntoResponse {
     let Some(sess) = session::get_session(&cookies, &state.cookie_key) else {
-        session::set_login_return_to(&cookies, "/oauth/authorize");
+        session::set_login_return_to(&cookies, &state.cookie_key, "/oauth/authorize");
         return Redirect::temporary("/login").into_response();
     };
 

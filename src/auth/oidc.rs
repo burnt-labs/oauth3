@@ -56,65 +56,29 @@ fn get_tmp_cookie_name(provider: &str) -> String {
     format!("{}{}", OIDC_TMP_COOKIE_PREFIX, provider)
 }
 
-fn redirect_after_login(cookies: &Cookies, config: &crate::config::AppConfig, user_id: &str, default_path: &str) -> Redirect {
-    if let Some(path) = session::take_login_return_to(cookies) {
-        if is_trusted_redirect(&path, &config.server.public_url) {
-            // For trusted return_to URLs, append a signed session token
-            // so the calling app can authenticate with OAuth3 via Bearer token.
-            if let Some(token) = session::create_session_token(config, user_id) {
-                let separator = if path.contains('?') { "&" } else { "?" };
-                let url = format!("{}{}token={}", path, separator, urlencoding::encode(&token));
-                return Redirect::temporary(&url);
-            }
+fn redirect_after_login(cookies: &Cookies, key: &tower_cookies::Key, config: &crate::config::AppConfig, default_path: &str) -> Redirect {
+    if let Some(path) = session::take_login_return_to(cookies, key) {
+        // Only allow same-origin or relative redirects — the session cookie
+        // provides authentication when requests stay on the same domain.
+        if is_same_origin_or_relative(&path, &config.server.public_url) {
             return Redirect::temporary(&path);
         }
-        // Untrusted external URL — redirect without attaching token
-        tracing::warn!(return_to = %path, "Blocked token attachment to untrusted redirect URL");
-        if path.starts_with('/') && !path.starts_with("//") {
-            return Redirect::temporary(&path);
-        }
+        tracing::warn!(return_to = %path, "Blocked redirect to external URL");
     }
     Redirect::temporary(default_path)
 }
 
-/// Check if a redirect URL is trusted for token attachment.
-/// Allows relative paths and same-origin URLs unconditionally.
-/// For cross-origin URLs, checks ALLOWED_RETURN_TO_ORIGINS env var.
-fn is_trusted_redirect(url: &str, public_url: &str) -> bool {
-    // Relative paths (but not protocol-relative //) are always trusted
+/// Returns true when the URL is a relative path or shares the same origin
+/// as `public_url`. In these cases the session cookie round-trips naturally
+/// so there is no need to attach a token to the URL.
+fn is_same_origin_or_relative(url: &str, public_url: &str) -> bool {
     if url.starts_with('/') && !url.starts_with("//") {
         return true;
     }
-
-    let Ok(target) = url::Url::parse(url) else { return false };
-
-    // Same origin as our public URL
-    if let Ok(base) = url::Url::parse(public_url) {
-        if target.origin() == base.origin() {
-            return true;
-        }
+    if let (Ok(target), Ok(base)) = (url::Url::parse(url), url::Url::parse(public_url)) {
+        return target.origin() == base.origin();
     }
-
-    // Check against allowed redirect origins from environment
-    if let Ok(allowed) = std::env::var("ALLOWED_RETURN_TO_ORIGINS") {
-        for origin in allowed.split(',') {
-            let origin = origin.trim();
-            if let Ok(allowed_url) = url::Url::parse(origin) {
-                if target.origin() == allowed_url.origin() {
-                    return true;
-                }
-            }
-        }
-        return false; // Origins configured but none matched
-    }
-
-    // No allowlist configured — warn and allow for backwards compatibility
-    tracing::warn!(
-        return_to = %url,
-        "No ALLOWED_RETURN_TO_ORIGINS configured; allowing external redirect. \
-         Set ALLOWED_RETURN_TO_ORIGINS to restrict."
-    );
-    true
+    false
 }
 
 fn write_tmp_state_generic(cookies: &Cookies, key: &tower_cookies::Key, provider: &str, v: &TmpAuthState) -> anyhow::Result<()> {
@@ -270,7 +234,7 @@ pub async fn callback(state: &AppState, cookies: Cookies, provider_key: &str, q:
 
     let user_id = uuid::Uuid::new_v4().to_string();
     session::set_session(&cookies, &state.cookie_key, &user_id, 60);
-    redirect_after_login(&cookies, &state.config, &user_id, "/").into_response()
+    redirect_after_login(&cookies, &state.cookie_key, &state.config, "/").into_response()
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -431,7 +395,7 @@ async fn callback_oidc_live(state: &AppState, cookies: Cookies, provider_key: &s
     if let Some(user) = state.accounts.find_user_by_identity(provider_key, &sub).await? {
         state.accounts.update_identity_tokens(provider_key, &sub, &access_token, refresh_token.as_deref(), expires_at.as_deref(), scopes.as_deref()).await?;
         session::set_session(&cookies, &state.cookie_key, &user.id, 60);
-        return Ok(redirect_after_login(&cookies, &state.config, &user.id, "/").into_response());
+        return Ok(redirect_after_login(&cookies, &state.cookie_key, &state.config, "/").into_response());
     }
 
     let user_id = uuid::Uuid::new_v4().to_string();
@@ -451,7 +415,7 @@ async fn callback_oidc_live(state: &AppState, cookies: Cookies, provider_key: &s
     };
     let user = state.accounts.create_user_and_link(new_user, new_identity).await?;
     session::set_session(&cookies, &state.cookie_key, &user.id, 60);
-    Ok(redirect_after_login(&cookies, &state.config, &user.id, "/").into_response())
+    Ok(redirect_after_login(&cookies, &state.cookie_key, &state.config, "/").into_response())
 }
 
 async fn start_oauth2_live(state: &AppState, cookies: Cookies, provider_key: &str, config: &ProviderConfig) -> anyhow::Result<Redirect> {
@@ -606,7 +570,7 @@ async fn fetch_github_user_and_login(
     if let Some(user) = state.accounts.find_user_by_identity("github", &sub).await? {
         state.accounts.update_identity_tokens("github", &sub, access_token, refresh_token, expires_at, scopes).await?;
         session::set_session(&cookies, &state.cookie_key, &user.id, 60);
-        return Ok(redirect_after_login(&cookies, &state.config, &user.id, "/").into_response());
+        return Ok(redirect_after_login(&cookies, &state.cookie_key, &state.config, "/").into_response());
     }
 
     let user_id = uuid::Uuid::new_v4().to_string();
@@ -626,7 +590,7 @@ async fn fetch_github_user_and_login(
     };
     let user = state.accounts.create_user_and_link(new_user, new_identity).await?;
     session::set_session(&cookies, &state.cookie_key, &user.id, 60);
-    Ok(redirect_after_login(&cookies, &state.config, &user.id, "/").into_response())
+    Ok(redirect_after_login(&cookies, &state.cookie_key, &state.config, "/").into_response())
 }
 
 pub async fn refresh_token(state: &AppState, provider_key: &str, subject: &str) -> anyhow::Result<()> {
