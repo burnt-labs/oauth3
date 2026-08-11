@@ -670,8 +670,51 @@ pub async fn refresh_token(state: &AppState, provider_key: &str, subject: &str) 
     Ok(())
 }
 
-// Use openidconnect's built-in reqwest async client function directly
-use openidconnect::reqwest::async_http_client;
+#[derive(Debug, thiserror::Error)]
+enum OauthHttpError {
+    #[error("OAuth HTTP request failed")]
+    Request(#[from] reqwest::Error),
+    #[error("OAuth HTTP method was invalid")]
+    Method(#[from] axum::http::method::InvalidMethod),
+    #[error("OAuth HTTP response header name was invalid")]
+    HeaderName(#[from] oauth2::http::header::InvalidHeaderName),
+    #[error("OAuth HTTP response header value was invalid")]
+    HeaderValue(#[from] oauth2::http::header::InvalidHeaderValue),
+    #[error("OAuth HTTP response status was invalid")]
+    Status(#[from] oauth2::http::status::InvalidStatusCode),
+}
+
+async fn async_http_client(
+    request: oauth2::HttpRequest,
+) -> Result<oauth2::HttpResponse, OauthHttpError> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())?;
+    let mut request_builder = client
+        .request(method, request.url.as_str())
+        .body(request.body);
+    for (name, value) in &request.headers {
+        request_builder = request_builder.header(name.as_str(), value.as_bytes());
+    }
+
+    let response = request_builder.send().await?;
+    let status_code = oauth2::http::StatusCode::from_u16(response.status().as_u16())?;
+    let mut headers = oauth2::http::HeaderMap::new();
+    for (name, value) in response.headers() {
+        headers.append(
+            oauth2::http::header::HeaderName::from_bytes(name.as_str().as_bytes())?,
+            oauth2::http::header::HeaderValue::from_bytes(value.as_bytes())?,
+        );
+    }
+    let body = response.bytes().await?.to_vec();
+
+    Ok(oauth2::HttpResponse {
+        status_code,
+        headers,
+        body,
+    })
+}
 
 fn apply_oauth2_auth_type(
     provider_key: &str,
@@ -681,5 +724,45 @@ fn apply_oauth2_auth_type(
         client.set_auth_type(oauth2::AuthType::RequestBody)
     } else {
         client
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn oauth_http_client_does_not_follow_redirects() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("{}/redirected", server.uri())),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(path("/redirected"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let response = async_http_client(oauth2::HttpRequest {
+            url: format!("{}/token", server.uri()).parse().unwrap(),
+            method: oauth2::http::Method::POST,
+            headers: oauth2::http::HeaderMap::new(),
+            body: b"grant_type=client_credentials".to_vec(),
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(response.status_code, oauth2::http::StatusCode::FOUND);
+        assert_eq!(
+            response.headers.get("location").unwrap().to_str().unwrap(),
+            format!("{}/redirected", server.uri())
+        );
     }
 }

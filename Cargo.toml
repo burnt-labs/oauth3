@@ -22,8 +22,8 @@ thiserror = "1"
 async-trait = "0.1"
 
 # Auth (OIDC/OAuth2) — use reqwest with rustls (no OpenSSL in Docker)
-openidconnect = { version = "3", default-features = false, features = ["reqwest", "rustls-tls"] }
-oauth2 = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
+openidconnect = { version = "3", default-features = false }
+oauth2 = { version = "4", default-features = false }
 
 # IDs & utils
 uuid = { version = "1", features = ["v4", "serde"] }
