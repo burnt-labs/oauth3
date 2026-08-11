@@ -4,7 +4,7 @@
 FROM rust:1.92-bullseye AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential ca-certificates && \
+    build-essential ca-certificates cmake && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

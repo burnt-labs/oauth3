@@ -31,6 +31,7 @@
 
         # Build-time dependencies
         nativeBuildInputs = with pkgs; [
+          cmake
           pkg-config
           rustToolchain
         ];
