@@ -1,4 +1,4 @@
-# Resolve oauth3 dependency vulnerabilities
+# Resolve OAuth2 dependency vulnerabilities
 
 ## Goal
 

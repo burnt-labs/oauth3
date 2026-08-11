@@ -21,9 +21,10 @@ anyhow = "1"
 thiserror = "1"
 async-trait = "0.1"
 
-# Auth (OIDC/OAuth2) — use reqwest with rustls (no OpenSSL in Docker)
+# Auth protocol types; the custom no-redirect transport is provided below.
 openidconnect = { version = "3", default-features = false }
 oauth2 = { version = "4", default-features = false }
+http = "1"
 
 # IDs & utils
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -41,7 +42,7 @@ r2d2 = "0.8"
 # Migrations
 diesel_migrations = { version = "2" }
 
-# HTTP client (used by openidconnect/oauth2). Force rustls TLS.
+# Shared HTTP client used by openidconnect/oauth2, with rustls TLS.
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "gzip", "brotli", "deflate", "rustls-tls"] }
 
 # dstack attestation

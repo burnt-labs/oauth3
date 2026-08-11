@@ -671,11 +671,11 @@ pub async fn refresh_token(state: &AppState, provider_key: &str, subject: &str) 
 }
 
 #[derive(Debug, thiserror::Error)]
-enum OauthHttpError {
+enum OAuthHttpError {
     #[error("OAuth HTTP request failed")]
     Request(#[from] reqwest::Error),
     #[error("OAuth HTTP method was invalid")]
-    Method(#[from] axum::http::method::InvalidMethod),
+    Method(#[from] http::method::InvalidMethod),
     #[error("OAuth HTTP response header name was invalid")]
     HeaderName(#[from] oauth2::http::header::InvalidHeaderName),
     #[error("OAuth HTTP response header value was invalid")]
@@ -684,12 +684,23 @@ enum OauthHttpError {
     Status(#[from] oauth2::http::status::InvalidStatusCode),
 }
 
+fn shared_oauth_http_client() -> Result<&'static reqwest::Client, reqwest::Error> {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+    if let Some(client) = CLIENT.get() {
+        Ok(client)
+    } else {
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        Ok(CLIENT.get_or_init(|| client))
+    }
+}
+
 async fn async_http_client(
     request: oauth2::HttpRequest,
-) -> Result<oauth2::HttpResponse, OauthHttpError> {
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+) -> Result<oauth2::HttpResponse, OAuthHttpError> {
+    let client = shared_oauth_http_client()?;
     let method = reqwest::Method::from_bytes(request.method.as_str().as_bytes())?;
     let mut request_builder = client
         .request(method, request.url.as_str())
@@ -764,5 +775,12 @@ mod tests {
             response.headers.get("location").unwrap().to_str().unwrap(),
             format!("{}/redirected", server.uri())
         );
+    }
+
+    #[test]
+    fn oauth_http_client_reuses_the_shared_transport() {
+        let first = shared_oauth_http_client().unwrap();
+        let second = shared_oauth_http_client().unwrap();
+        assert!(std::ptr::eq(first, second));
     }
 }
