@@ -10,7 +10,7 @@
 
 services:
   app:
-    image: ghcr.io/burnt-labs/oauth3@sha256:26590623f9b30bf1671eaf3293abe785f149d9ad9ffa18b2f59962cd93be4c6c
+    image: ghcr.io/burnt-labs/oauth3@sha256:e891129be8e48b592af77314cc3ac5dfdf9b72905177d114d7de3e8545c0a8cb
     pull_policy: always
     restart: unless-stopped
     volumes:
