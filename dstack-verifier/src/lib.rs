@@ -114,9 +114,17 @@ impl AttestationVerifier {
             })?;
 
         // Get collateral from PCCS
-        let collateral = dcap_qvl::collateral::get_collateral(&self.config.pccs_url, &quote_bytes[..])
-            .await
-            .map_err(|e| VerificationError::CollateralFetch(format!("Collateral fetch failed: {}", e)))?;
+        let collateral_client =
+            dcap_qvl::collateral::CollateralClient::with_default_http(&self.config.pccs_url)
+                .map_err(|e| {
+                    VerificationError::CollateralFetch(format!(
+                        "Failed to create collateral client: {}",
+                        e
+                    ))
+                })?;
+        let collateral = collateral_client.fetch(&quote_bytes).await.map_err(|e| {
+            VerificationError::CollateralFetch(format!("Collateral fetch failed: {}", e))
+        })?;
 
         // Verify quote with dcap-qvl
         let now = std::time::SystemTime::now()
@@ -136,15 +144,15 @@ impl AttestationVerifier {
             .ok_or_else(|| VerificationError::QuoteParse("Quote is not a TDX quote".to_string()))?;
 
         // Extract report data
-        let report_data = hex::encode(&td_report.report_data);
+        let report_data = hex::encode(td_report.report_data);
 
         // Extract RTMRs
         let rtmrs = RTMRs {
-            mrtd: hex::encode(&td_report.mr_td),
-            rtmr0: hex::encode(&td_report.rt_mr0),
-            rtmr1: hex::encode(&td_report.rt_mr1),
-            rtmr2: hex::encode(&td_report.rt_mr2),
-            rtmr3: hex::encode(&td_report.rt_mr3),
+            mrtd: hex::encode(td_report.mr_td),
+            rtmr0: hex::encode(td_report.rt_mr0),
+            rtmr1: hex::encode(td_report.rt_mr1),
+            rtmr2: hex::encode(td_report.rt_mr2),
+            rtmr3: hex::encode(td_report.rt_mr3),
         };
 
         // Verify event log if provided
@@ -291,7 +299,7 @@ impl LogEntry {
                 "Digest mismatch for event '{}': expected {}, got {}",
                 self.event,
                 hex::encode(&digest_bytes),
-                hex::encode(&computed_digest)
+                hex::encode(computed_digest)
             );
         }
 
@@ -302,7 +310,6 @@ impl LogEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
-
 
     #[tokio::test]
     async fn test_verify_attestation_with_real_quote() {
@@ -349,21 +356,22 @@ mod tests {
     fn test_event_log_rtmr_replay() {
         let verifier = AttestationVerifier::new();
 
-        // Sample event log with a single event
+        // Sample event log with a single valid hex-encoded event.
         let event_log = vec![
             LogEntry {
                 imr: 0,
                 event_type: 1,
-                digest: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000".to_string(),
+                digest: "7c0ded126da0e5f6b339cf2e1cd86db39d41183efee72176af0baa1f5efdffe86f431cf0040c18cc551544854784c8b9".to_string(),
                 event: "test-event".to_string(),
-                event_payload: "test-payload".to_string(),
+                event_payload: "746573742d7061796c6f6164".to_string(),
             }
         ];
 
-        // Expected RTMR after one extend with all zeros
+        // Expected RTMR after one extend with the event digest.
+        let digest = hex::decode(&event_log[0].digest).unwrap();
         let mut hasher = sha2::Sha384::new();
-        hasher.update(&[0u8; 48]); // Initial RTMR
-        hasher.update(&[0u8; 48]); // Digest padded to 48 bytes
+        hasher.update([0u8; 48]); // Initial RTMR
+        hasher.update(&digest);
         let expected_rtmr0 = hasher.finalize().to_vec();
 
         let quote_rtmrs = [
