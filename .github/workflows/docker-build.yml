@@ -19,7 +19,7 @@ jobs:
   # be promoted later without rebuilding.
   build:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-4
     permissions:
       contents: read
       packages: write
@@ -81,7 +81,7 @@ jobs:
   # rebuild needed. Then opens a PR to pin the new digest.
   promote:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-2
     permissions:
       contents: write
       packages: write
