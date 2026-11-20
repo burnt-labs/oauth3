@@ -12,7 +12,7 @@
   unblock an outage. A new need becomes an operation of the shared flow; extend
   it there and have the caller use it.
 - Runtime secrets come only from the target's 1Password Environment
-  (`targets.<role>.configurationEnvironment`, `oauth3 / production`),
+  (`targets.<role>.configurationEnvironment`, `oauth3-production`),
   one concealed entry per `runtimeSecrets` name. Do not add a JSON
   bundle or per-name GitHub secrets for them.
 - The caller stays thin: dispatch inputs passed straight through, the
