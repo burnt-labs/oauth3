@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   phala:
-    uses: burnt-labs/github-workflows/.github/workflows/phala-deploy.yml@8c26ba4346e518370b37f4a79be7a5d1e828f4e2 # unreleased
+    uses: burnt-labs/github-workflows/.github/workflows/phala-deploy.yml@6435d2c237b1e63663bd2c2dd2fcbcacd1fd1f65 # unreleased
     with:
       target: ${{ inputs.target }}
       operation: ${{ inputs.operation }}

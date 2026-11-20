@@ -50,12 +50,19 @@ domain in the compose before the caller can offer it.
 
 ### Configuration
 
-The flow reads these from the `production` GitHub Environment (or repository
-secrets) and seals the runtime secrets into the CVM under the same names:
+Runtime secrets come only from the target's 1Password item in vault `Deploy`:
+`op://Deploy/oauth3 production` for `release` (`op://Deploy/oauth3 staging`
+is declared for the unused candidate). The flow reads it with the service
+account token in the organization secret `OP_DEPLOY_SERVICE_ACCOUNT_TOKEN` and
+seals each value into the CVM under its field's name. The item has exactly one
+**concealed** custom field per name the compose consumes, labelled with that
+name: `APP_PUBLIC_URL`, `COOKIE_KEY_BASE64`, `PROVIDER_GOOGLE_CLIENT_ID`,
+`PROVIDER_GOOGLE_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN`, `CERTBOT_EMAIL`. A
+missing, extra, empty or unconcealed field fails the run before it deploys.
+They are not GitHub secrets.
 
-- Runtime secrets, as the compose consumes them: `APP_PUBLIC_URL`,
-  `COOKIE_KEY_BASE64`, `PROVIDER_GOOGLE_CLIENT_ID`,
-  `PROVIDER_GOOGLE_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN`, `CERTBOT_EMAIL`
+Deployment credentials stay GitHub secrets:
+
 - `PHALA_API_KEY`: API key of the Phala workspace that owns the CVM
 - `GHCR_READ_TOKEN`: organization read-package token, sealed as the CVM's
   registry login
@@ -125,7 +132,7 @@ Open `http://localhost:9080` and upload your `docker-compose.phala.yml`
 Before deploying:
 
 - [ ] Docker image built and pushed to GHCR (CI handles this)
-- [ ] Set the secrets listed under Configuration in the `production` GitHub Environment
+- [ ] Fill the fields listed under Configuration in `op://Deploy/oauth3 production`
 - [ ] Configure provider OAuth credentials (Google, GitHub, etc.)
 - [ ] Configure domain and SSL/TLS
 - [ ] Test attestation endpoint works in TEE

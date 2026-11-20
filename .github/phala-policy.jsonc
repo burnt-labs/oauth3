@@ -23,10 +23,13 @@
     // today, but the flow always seals a durable read-package login so the CVM
     // can still pull if the package is made private.
     "registryPasswordSecret": "GHCR_READ_TOKEN",
+    // A 1Password service account token with read access to the Deploy vault.
+    // Runtime values come only from the target's configurationItem below.
+    "onePasswordTokenSecret": "OP_DEPLOY_SERVICE_ACCOUNT_TOKEN",
   },
-  // Sealed into the CVM by these exact names, read from the target GitHub
-  // Environment (or repository) secrets. They are the names the compose file
-  // consumes; a sealed value the compose does not name never reaches a
+  // Sealed into the CVM by these exact names, read from the target's
+  // 1Password item (one concealed custom field per name). They are the names
+  // the compose file consumes; a sealed value the compose does not name never reaches a
   // container. An update or reseal replaces the CVM's sealed environment with
   // exactly these.
   "runtimeSecrets": [
@@ -47,10 +50,12 @@
     "candidate": {
       "githubEnvironment": "staging",
       "cvmName": "oauth3-staging",
+      "configurationItem": "op://Deploy/oauth3 staging",
     },
     "release": {
       "githubEnvironment": "production",
       "cvmName": "oauth3-redacted",
+      "configurationItem": "op://Deploy/oauth3 production",
       // TLS terminates inside the CVM (dstack-ingress), so the gateway URL
       // Phala reports does not answer. Health-check the real origin.
       "publicUrl": "https://oauth3.burnt.com",
