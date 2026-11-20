@@ -5,12 +5,16 @@
 # set by the host operator and are NOT covered by attestation — only use
 # them for secrets that cannot be baked into the image.
 #
-# To update provider endpoints or the Docker image, edit this file and
-# redeploy. This creates a new attestation covering the changed values.
+# Deployed only through .github/workflows/phala-deploy.yml (the shared Phala
+# flow). The app image placeholder is not a runtime variable: the flow
+# replaces it with ghcr.io/burnt-labs/oauth3@<image-digest> before the deploy
+# (policy image.composeVariable), so the attested compose hash names the exact
+# image running. To change provider endpoints, edit this file and run an
+# update; that creates a new attestation covering the changed values.
 
 services:
   app:
-    image: ghcr.io/burnt-labs/oauth3@sha256:26590623f9b30bf1671eaf3293abe785f149d9ad9ffa18b2f59962cd93be4c6c
+    image: ${APP_IMAGE}
     pull_policy: always
     restart: unless-stopped
     volumes:

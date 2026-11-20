@@ -21,11 +21,7 @@ This includes:
 
 ## Production / Phala Deployment
 
-Production uses `docker-compose.phala.yml` which is deployed to a Phala CVM via the deploy script:
-
-```bash
-./scripts/phala-deploy.sh .env.phala
-```
+Production uses `docker-compose.phala.yml`, deployed to a Phala CVM only through the shared Phala flow via `.github/workflows/phala-deploy.yml`.
 
 This includes:
 - PostgreSQL database (encrypted volume inside TEE)

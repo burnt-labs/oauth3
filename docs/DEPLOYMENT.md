@@ -2,92 +2,81 @@
 
 This document describes how to deploy OAuth3 to Phala's TEE infrastructure.
 
-## Quick Start: Phala Cloud Deployment
+## Phala Cloud
 
-### Prerequisites
+Phala deploys go only through the organization's shared Phala flow
+(`burnt-labs/github-workflows` `.github/workflows/phala-deploy.yml`). This
+repository holds its policy, `.github/phala-policy.jsonc` (plus
+`.github/quality-policy.jsonc` for the quality gates the flow runs first), and
+one thin caller, `.github/workflows/phala-deploy.yml`. There is no
+repository-local deploy script or CLI path; a new need is added to the shared
+flow, never here.
 
-- Phala Cloud account
-- Docker image published to GHCR (CI does this automatically on push to main)
+### The image
 
-### Steps
-
-1. **Configure environment**
-
-```bash
-# Copy Phala environment template
-cp .env.phala.example .env.phala
-
-# Edit with your values
-nano .env.phala
-```
-
-**Required variables in `.env.phala`:**
+`.github/workflows/docker-build.yml` builds the image with Nix on pull requests
+and, on merge to `main`, promotes it to `ghcr.io/burnt-labs/oauth3:main`,
+`:latest` and `:main-<merge commit sha>`. The digest to deploy is printed in
+that run's "Promote image to latest" step (`Digest: sha256:...`), or read it
+from the registry:
 
 ```bash
-DOCKER_IMAGE=ghcr.io/burnt-labs/oauth3:latest
-POSTGRES_PASSWORD=your-secure-password
-COOKIE_KEY_BASE64=$(openssl rand -base64 64)
-
-# APP_PUBLIC_URL - can be set after deployment when you know the URL
-APP_PUBLIC_URL=https://your-cvm-url.phala.network
-
-# OAuth providers
-PROVIDER_GOOGLE_TYPE=oidc
-PROVIDER_GOOGLE_MODE=live
-PROVIDER_GOOGLE_CLIENT_ID=your-client-id
-PROVIDER_GOOGLE_CLIENT_SECRET=your-client-secret
-PROVIDER_GOOGLE_ISSUER=https://accounts.google.com
-PROVIDER_GOOGLE_SCOPES=openid profile email
-PROVIDER_GOOGLE_API_BASE_URL=https://www.googleapis.com
+crane digest ghcr.io/burnt-labs/oauth3:main-<merge commit sha>
 ```
 
-**Note on APP_PUBLIC_URL:**
+`docker-compose.phala.yml` references the app image as `${APP_IMAGE}`. The
+shared flow replaces it with `ghcr.io/burnt-labs/oauth3@<digest>` before the
+deploy, after proving the sealed registry login can pull that digest, so the
+attested compose hash names the exact image running.
 
-- You won't know your public URL until after deployment
-- The script will deploy with a placeholder if not set
-- After deployment, get your URL from `phala apps`
-- Configure OAuth callback URLs with providers using the Phala URL
+### Operations
 
-2. **Deploy to Phala Cloud**
+Run **Phala Deploy** (`.github/workflows/phala-deploy.yml`) from `main` with
+`target: release` (CVM `oauth3-redacted`, `https://oauth3.burnt.com`):
 
-```bash
-# Install Phala Cloud CLI
-npm install -g @phala/cloud-cli
+| Operation | What it does                                                                                       | `image-digest` |
+| --------- | -------------------------------------------------------------------------------------------------- | -------------- |
+| `setup`   | Creates the CVM when none has that name, once, with the infrastructure in the policy's `setup` block | required       |
+| `update`  | Deploys a new image to the existing CVM in place (same app id)                                     | required       |
+| `reseal`  | Re-applies the sealed environment and restarts; no image or compose change                         | empty          |
 
-# Login
-phala login
+Every operation health-checks `https://oauth3.burnt.com/healthz`. `update` and
+`setup` change the compose hash, so anything that pins the attested
+measurements must be re-pinned after them.
 
-# Fresh deploy
-./scripts/phala-deploy.sh .env.phala
+There is no candidate CVM. The compose file is production's (dstack-ingress
+claims `oauth3.burnt.com` and manages its DNS), so a candidate needs its own
+domain in the compose before the caller can offer it.
 
-# Deploy with data migration from existing CVM
-./scripts/phala-deploy.sh .env.phala old-cvm-name
-```
+### Configuration
 
-The script always creates a new CVM. When an old CVM name is provided, it migrates the Postgres data via `phala ssh` + `pg_dump`.
+The release role reads `oauth3 / production` through the repository secret
+`OP_ENVIRONMENT_TOKEN`. Each of these names has one concealed entry: `APP_PUBLIC_URL`, `COOKIE_KEY_BASE64`, `PROVIDER_GOOGLE_CLIENT_ID`,
+`PROVIDER_GOOGLE_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN`, `CERTBOT_EMAIL`. A
+missing, extra, empty or unconcealed field fails the run before it deploys.
+They are not GitHub secrets.
 
-3. **Verify deployment**
+Deployment credentials stay GitHub secrets:
 
-```bash
-# Check CVM status
-phala apps
+- `PHALA_API_KEY`: API key of the Phala workspace that owns the CVM
+- `GHCR_READ_TOKEN`: organization read-package token, sealed as the CVM's
+  registry login
 
-# View logs
-phala logs <cvm-name>
-```
+Non-secret configuration is hardcoded in `docker-compose.phala.yml` so it is
+covered by attestation.
 
-### Option 2: Self-Hosted dstack
+## Self-Hosted dstack
 
 For running on your own TDX infrastructure:
 
-#### Prerequisites
+### Prerequisites
 
 - TDX-enabled server (Intel 4th/5th gen Xeon)
 - Ubuntu 22.04 or later
 - 16GB+ RAM, 100GB+ disk
 - Public IPv4 address
 
-#### Installation
+### Installation
 
 1. **Install dependencies**
 
@@ -138,7 +127,7 @@ Open `http://localhost:9080` and upload your `docker-compose.phala.yml`
 Before deploying:
 
 - [ ] Docker image built and pushed to GHCR (CI handles this)
-- [ ] Set production environment variables in `.env.phala`
+- [ ] Fill the fields listed under Configuration in `op://Deploy/oauth3 production`
 - [ ] Configure provider OAuth credentials (Google, GitHub, etc.)
 - [ ] Configure domain and SSL/TLS
 - [ ] Test attestation endpoint works in TEE
@@ -149,10 +138,11 @@ Before deploying:
 
 ```
 oauth3/
-├── docker-compose.phala.yml    # Production compose (app + db)
-├── scripts/phala-deploy.sh     # Deployment script
-├── scripts/pre-launch.sh       # CVM pre-launch (docker login + pull)
-└── .env.phala                  # Production environment (not committed)
+├── docker-compose.phala.yml              # Production compose (app + dstack-ingress)
+├── .github/phala-policy.jsonc            # Shared Phala flow policy
+├── .github/quality-policy.jsonc          # Quality gates the flow runs first
+├── .github/workflows/phala-deploy.yml    # Thin caller of the shared flow
+└── scripts/pre-launch.sh                 # CVM pre-launch (docker login + pull)
 ```
 
 **Development only (not deployed):**
@@ -176,9 +166,7 @@ The response will include TEE attestation quote and event log proving execution 
 
 ## Monitoring
 
-```bash
-phala logs <cvm-name> --follow
-```
+Use the Phala Cloud dashboard for the CVM's status and logs.
 
 ## Data Persistence
 
@@ -187,11 +175,9 @@ CVM volumes are LUKS-encrypted and persist across restarts and redeployments. Ho
 - **Physical disk failure** will lose data (no built-in backup)
 - **Docker image hash changes** change the KMS-derived encryption keys, making old data inaccessible
 
-The deploy script always creates a fresh CVM to avoid key mismatch issues. Use the migration flag to transfer data:
-
-```bash
-./scripts/phala-deploy.sh .env.phala old-cvm-name
-```
+`update` deploys to the existing CVM in place, keeping its app id; it no longer
+creates a fresh CVM per deploy. Check the key-derivation note above against the
+dstack version in use before relying on data surviving an image change.
 
 ## Support
 

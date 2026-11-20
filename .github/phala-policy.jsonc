@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "workingDirectory": ".",
+  // The compose file references the app image as ${APP_IMAGE}. The flow
+  // replaces it with ghcr.io/burnt-labs/oauth3@<image-digest> before dstack
+  // sees the text, so the attested compose hash names the exact image running.
+  "composeFile": "docker-compose.phala.yml",
+  "healthcheckPath": "/healthz",
+  "image": {
+    "registry": "ghcr.io",
+    // Built and published by .github/workflows/docker-build.yml (Nix), not by
+    // the shared flow. The caller passes the digest to deploy as image-digest.
+    "repository": "ghcr.io/burnt-labs/oauth3",
+    "composeVariable": "APP_IMAGE",
+    // ghcr.io authenticates on the token alone, so this only has to be a
+    // stable non-empty principal.
+    "registryUsername": "burnt-labs",
+  },
+  "credentials": {
+    // The Phala Cloud API key of the workspace that owns the CVM.
+    "phalaApiKeySecret": "PHALA_API_KEY",
+    // Organization secret granted to this repository. The image is public
+    // today, but the flow always seals a durable read-package login so the CVM
+    // can still pull if the package is made private.
+    "registryPasswordSecret": "GHCR_READ_TOKEN",
+    // A 1Password service account token scoped to this repository.
+    // Runtime values come only from the target's configurationEnvironment below.
+    "onePasswordTokenSecret": "OP_ENVIRONMENT_TOKEN",
+  },
+  // Sealed into the CVM by these exact names, read from the target's
+  // 1Password Environment (one concealed entry per name). They are the names
+  // the compose file consumes; a sealed value the compose does not name never reaches a
+  // container. An update or reseal replaces the CVM's sealed environment with
+  // exactly these.
+  "runtimeSecrets": [
+    "APP_PUBLIC_URL",
+    "COOKIE_KEY_BASE64",
+    "PROVIDER_GOOGLE_CLIENT_ID",
+    "PROVIDER_GOOGLE_CLIENT_SECRET",
+    "CLOUDFLARE_API_TOKEN",
+    "CERTBOT_EMAIL",
+  ],
+  "runtimeVariables": [],
+  "targets": {
+    "release": {
+      "githubEnvironment": "production",
+      "cvmName": "oauth3-redacted",
+      "configurationEnvironment": "t5lu2heimqd4e4kvuo4k2xpal4",
+      // TLS terminates inside the CVM (dstack-ingress), so the gateway URL
+      // Phala reports does not answer. Health-check the real origin.
+      "publicUrl": "https://oauth3.burnt.com",
+      // Used by setup to create the CVM and checked by update against the
+      // existing one (an update refuses a CVM whose OS, size, region or
+      // privacy settings differ). Confirm these against the live CVM before
+      // the first dispatch.
+      "setup": {
+        "osImage": "dstack-0.5.5",
+        "instanceType": "tdx.small",
+        "region": "us-west-1",
+      },
+    },
+  },
+}
