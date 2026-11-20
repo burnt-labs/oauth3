@@ -322,18 +322,12 @@ docker compose up  # All services (db, dex, simulator, app)
 ```
 
 **Phala Cloud:**
-```bash
-# Configure .env.phala
-cp .env.phala.example .env.phala
-nano .env.phala
 
-# CI builds and pushes images automatically on push to main.
-# To deploy manually:
-./scripts/phala-deploy.sh .env.phala
-
-# Deploy with data migration from old CVM:
-./scripts/phala-deploy.sh .env.phala old-cvm-name
-```
+Deploys run only through the organization's shared Phala flow, via the thin
+caller `.github/workflows/phala-deploy.yml` (policy in
+`.github/phala-policy.jsonc`). Dispatch it from `main` with `target: release`,
+an `operation` (`setup`, `update` or `reseal`) and, for `setup`/`update`, the
+`image-digest` that `docker-build.yml` promoted on merge to `main`.
 
 See **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** for complete instructions.
 

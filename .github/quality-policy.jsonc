@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "workingDirectory": ".",
+  // The oauth3 crate, with dstack-verifier as a path dependency. The central
+  // workflow installs the compiler from rust-toolchain.toml and nothing else.
+  "toolchain": "rust",
+  "commands": {
+    // llvm-tools-preview and cargo-llvm-cov are this repository's coverage
+    // tooling. cargo-llvm-cov is pinned and built from a locked dependency
+    // graph.
+    "install": "rustup component add llvm-tools-preview && cargo install cargo-llvm-cov --locked --version 0.6.24 && cargo fetch --locked",
+    "lint": "cargo clippy --all-targets --locked -- -D warnings",
+    // rustfmt is this crate's formatter; the gate is named for the shape it
+    // fills, not for Prettier.
+    "prettier": "cargo fmt --all --check",
+    "typeCheck": "cargo check --all-targets --locked",
+    "test": "cargo test --locked",
+    // Thresholds are the measured floor, not an aspiration: they catch a
+    // regression, and raising them is its own work. llvm-cov reports no branch
+    // data on stable, so the branches threshold below is enforced against
+    // region coverage.
+    "coverage": "cargo llvm-cov --locked --fail-under-lines 17 --fail-under-functions 18 --fail-under-regions 15",
+    "build": "cargo build --release --locked",
+  },
+  "coverageThresholds": {
+    "lines": 17,
+    "functions": 18,
+    "branches": 15,
+  },
+}

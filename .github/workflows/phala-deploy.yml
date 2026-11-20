@@ -1,60 +1,41 @@
-name: Deploy to Phala Cloud
+# oauth3's only Phala path: the organization's one Phala flow
+# (burnt-labs/github-workflows phala-deploy.yml), driven by .github/phala-policy.jsonc.
+# release = oauth3-redacted (oauth3.burnt.com). There is no candidate CVM yet.
+#   setup:  create the absent CVM, once.
+#   update: deploy image-digest to the existing CVM (new compose hash).
+#   reseal: re-apply the CVM's sealed environment and restart it; no image change.
+# image-digest is the sha256 digest docker-build.yml promoted (update and setup).
+# Do not add a repository-local deploy path; extend the shared flow (AGENTS.md).
+name: Phala Deploy
 
 on:
   workflow_dispatch:
     inputs:
-      instance_type:
-        description: 'CVM instance type'
+      target:
+        description: Semantic target
         required: true
-        default: 'tdx.small'
         type: choice
-        options:
-          - tdx.small
-          - tdx.medium
-          - tdx.large
-      disk_size:
-        description: 'Disk size'
+        options: [release]
+      operation:
+        description: Operation
         required: true
-        default: '60G'
-      cvm_name:
-        description: 'CVM name (leave empty for auto-generated)'
+        type: choice
+        options: [update, reseal, setup]
+      image-digest:
+        description: Image digest to deploy (sha256:<64 hex>); empty for reseal
         required: false
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+  packages: write
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Phala CLI
-        run: npm install -g phala
-
-      - name: Deploy CVM
-        run: |
-          CVM_NAME="${{ inputs.cvm_name }}"
-          if [ -z "$CVM_NAME" ]; then
-            CVM_NAME="oauth3-redacted"
-          fi
-
-          # Process substitution passes secrets via in-memory file descriptor
-          # — nothing is written to disk.
-          phala deploy \
-            --api-token "${{ secrets.PHALA_API_KEY }}" \
-            --name "$CVM_NAME" \
-            --compose docker-compose.phala.yml \
-            --disk-size "${{ inputs.disk_size }}" \
-            --instance-type "${{ inputs.instance_type }}" \
-            -e <(cat <<EOF
-          COOKIE_KEY_BASE64=${{ secrets.CVM_COOKIE_KEY_BASE64 }}
-          PROVIDER_GOOGLE_CLIENT_ID=${{ secrets.CVM_GOOGLE_CLIENT_ID }}
-          PROVIDER_GOOGLE_CLIENT_SECRET=${{ secrets.CVM_GOOGLE_CLIENT_SECRET }}
-          APP_PUBLIC_URL=${{ secrets.CVM_APP_PUBLIC_URL }}
-          CLOUDFLARE_API_TOKEN=${{ secrets.CVM_CLOUDFLARE_API_TOKEN }}
-          CERTBOT_EMAIL=${{ secrets.CVM_CERTBOT_EMAIL }}
-          EOF
-          )
-        shell: bash
+  phala:
+    uses: burnt-labs/github-workflows/.github/workflows/phala-deploy.yml@8c26ba4346e518370b37f4a79be7a5d1e828f4e2 # unreleased
+    with:
+      target: ${{ inputs.target }}
+      operation: ${{ inputs.operation }}
+      image-digest: ${{ inputs.image-digest }}
+    secrets: inherit
