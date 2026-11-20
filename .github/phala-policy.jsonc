@@ -23,12 +23,12 @@
     // today, but the flow always seals a durable read-package login so the CVM
     // can still pull if the package is made private.
     "registryPasswordSecret": "GHCR_READ_TOKEN",
-    // A 1Password service account token with read access to the Deploy vault.
-    // Runtime values come only from the target's configurationItem below.
-    "onePasswordTokenSecret": "OP_DEPLOY_SERVICE_ACCOUNT_TOKEN",
+    // A 1Password service account token scoped to this repository.
+    // Runtime values come only from the target's configurationEnvironment below.
+    "onePasswordTokenSecret": "OP_ENVIRONMENT_TOKEN",
   },
   // Sealed into the CVM by these exact names, read from the target's
-  // 1Password item (one concealed custom field per name). They are the names
+  // 1Password Environment (one concealed entry per name). They are the names
   // the compose file consumes; a sealed value the compose does not name never reaches a
   // container. An update or reseal replaces the CVM's sealed environment with
   // exactly these.
@@ -42,20 +42,10 @@
   ],
   "runtimeVariables": [],
   "targets": {
-    // The shared policy requires a candidate target, but no candidate CVM
-    // exists and the caller does not offer it: the compose file is
-    // production's (dstack-ingress claims oauth3.burnt.com and rewrites its
-    // DNS), so a candidate built from it would take over the production
-    // hostname. A candidate needs its own domain in the compose first.
-    "candidate": {
-      "githubEnvironment": "staging",
-      "cvmName": "oauth3-staging",
-      "configurationItem": "op://Deploy/oauth3 staging",
-    },
     "release": {
       "githubEnvironment": "production",
       "cvmName": "oauth3-redacted",
-      "configurationItem": "op://Deploy/oauth3 production",
+      "configurationEnvironment": "t5lu2heimqd4e4kvuo4k2xpal4",
       // TLS terminates inside the CVM (dstack-ingress), so the gateway URL
       // Phala reports does not answer. Health-check the real origin.
       "publicUrl": "https://oauth3.burnt.com",

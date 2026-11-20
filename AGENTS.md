@@ -11,9 +11,9 @@
   scripts, Phala CLI calls, or credential handling in this repository, even to
   unblock an outage. A new need becomes an operation of the shared flow; extend
   it there and have the caller use it.
-- Runtime secrets come only from the target's 1Password item
-  (`targets.<role>.configurationItem`, `op://Deploy/oauth3 <githubEnvironment>`),
-  one concealed custom field per `runtimeSecrets` name. Do not add a JSON
+- Runtime secrets come only from the target's 1Password Environment
+  (`targets.<role>.configurationEnvironment`, `oauth3 / production`),
+  one concealed entry per `runtimeSecrets` name. Do not add a JSON
   bundle or per-name GitHub secrets for them.
 - The caller stays thin: dispatch inputs passed straight through, the
   permissions the shared flow needs, `secrets: inherit`, and no logic.

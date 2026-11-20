@@ -50,13 +50,8 @@ domain in the compose before the caller can offer it.
 
 ### Configuration
 
-Runtime secrets come only from the target's 1Password item in vault `Deploy`:
-`op://Deploy/oauth3 production` for `release` (`op://Deploy/oauth3 staging`
-is declared for the unused candidate). The flow reads it with the service
-account token in the organization secret `OP_DEPLOY_SERVICE_ACCOUNT_TOKEN` and
-seals each value into the CVM under its field's name. The item has exactly one
-**concealed** custom field per name the compose consumes, labelled with that
-name: `APP_PUBLIC_URL`, `COOKIE_KEY_BASE64`, `PROVIDER_GOOGLE_CLIENT_ID`,
+The release role reads `oauth3 / production` through the repository secret
+`OP_ENVIRONMENT_TOKEN`. Each of these names has one concealed entry: `APP_PUBLIC_URL`, `COOKIE_KEY_BASE64`, `PROVIDER_GOOGLE_CLIENT_ID`,
 `PROVIDER_GOOGLE_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN`, `CERTBOT_EMAIL`. A
 missing, extra, empty or unconcealed field fails the run before it deploys.
 They are not GitHub secrets.
